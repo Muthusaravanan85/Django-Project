@@ -1,5 +1,5 @@
 from django.shortcuts import render,redirect
-from .models import employee
+from .models import employee,employeefile
 from django.core.files.storage import FileSystemStorage
 import csv,io,os
 from django.http import HttpResponse,FileResponse,Http404
@@ -8,39 +8,35 @@ from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 import pandas as pd
-
+import zipfile
+ 
 def view(request):
     employees=employee.objects.all()
     return render(request,'view.html',{'employees':employees})
 def create(request):
     if request.method == 'POST':
-        if 'file' in request.FILES:
-            emp_id = request.POST.get('Empid')
-            name = request.POST.get('Name')
-            mobile = request.POST.get('Mobile')
-            email = request.POST.get('Email')
-            role = request.POST.get('Role')
-            files = request.FILES.getlist('file')
-            file_paths = []
-            uploaded_files_urls=[]
+        emp_id = request.POST.get('Empid')
+        name = request.POST.get('Name')
+        mobile = request.POST.get('Mobile')
+        email = request.POST.get('Email')
+        role = request.POST.get('Role')
+
+        new_employee = employee(
+            Empid=emp_id,
+            Name=name,
+            Mobile=mobile,
+            Email=email,
+            Role=role,
+        )
+        new_employee.save()
+        files = request.FILES.getlist('file')
+        for file in files:
+            file_name, file_extension = os.path.splitext(file.name)
+            custom_file_name = f"{new_employee.Empid}-{file_name}{file_extension}"
             fs = FileSystemStorage(location='media')
-            for file in files:
-                filename = fs.save(str(emp_id)+"-"+file.name, file)
-                uploaded_file_url = fs.url(filename)
-                uploaded_files_urls.append(uploaded_file_url)
-                file_paths.append(filename)
-            new_employee = employee(
-                Empid=emp_id,
-                Name=name,
-                Mobile=mobile,
-                Email=email,
-                Role=role,
-                file=filename
-            )
-            new_employee.save()
-            return redirect('view') 
-        else:
-            return render(request, 'view.html')
+            saved_file = fs.save(custom_file_name, file)
+            employeefile.objects.create(employee=new_employee, file=saved_file)
+        return redirect('view') 
     return render(request, 'view.html')
 def update(request):
     if request.method =='POST':
@@ -60,8 +56,17 @@ def delete(request,id):
     return redirect('view')
 def download_file(request, id):
     try:
-        uploaded_file = employee.objects.get(id=id)
-        return FileResponse(uploaded_file.file, as_attachment=True)
+        file_ids = request.POST.getlist('files')  # File IDs submitted via form
+        files = employeefile.objects.filter(employee_id=id)
+
+        response = HttpResponse(content_type="application/zip")
+        response['Content-Disposition'] = 'attachment; filename="downloaded_files.zip"'
+
+        with zipfile.ZipFile(response, 'w') as zip_file:
+            for file_obj in files:
+                file_path = os.path.join(settings.MEDIA_ROOT, file_obj.file.name)
+                zip_file.write(file_path, os.path.basename(file_path))
+        return response  
     except employee.DoesNotExist:
         raise Http404("File not found")
 def importfile(request):

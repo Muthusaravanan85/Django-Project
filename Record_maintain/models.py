@@ -7,5 +7,8 @@ class employee(models.Model):
     Mobile=models.BigIntegerField(null=True)
     Email=models.EmailField(max_length=50,null=True)
     Role=models.CharField(max_length=30,null=True)
-    file=models.FileField(upload_to='media/')
     history = HistoricalRecords()
+
+class employeefile(models.Model):
+    employee = models.ForeignKey(employee, on_delete=models.CASCADE, related_name='files')
+    file = models.FileField(upload_to='media/')
